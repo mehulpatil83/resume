@@ -1,0 +1,16 @@
+# AI Service
+ai-service/venv/
+ai-service/__pycache__/
+
+# Backend
+backend/.env
+backend/backend.exe
+backend/bin/
+
+# Frontend (usually has its own, but good to have safeguards)
+frontend/node_modules/
+frontend/.env
+
+# General
+.env
+.DS_Store

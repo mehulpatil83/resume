@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: resume_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: resume_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - resume_net
+
+  # Temporal Server
+  temporal:
+    image: temporalio/auto-setup:1.24.2
+    container_name: resume_temporal
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PWD=password
+      - POSTGRES_SEEDS=postgres
+    depends_on:
+      - postgres
+    ports:
+      - "7233:7233" # gRPC Port
+    networks:
+      - resume_net
+    labels:
+      - "kompose.service.type=ClusterIP"
+
+  # Temporal UI
+  temporal-ui:
+    image: temporalio/ui:latest
+    container_name: resume_temporal_ui
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    depends_on:
+      - temporal
+    ports:
+      - "8080:8080"
+    networks:
+      - resume_net
+
+networks:
+  resume_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
