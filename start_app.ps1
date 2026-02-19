@@ -16,7 +16,7 @@ Write-Host "Backend started in new window." -ForegroundColor Green
 
 # 3. Start AI Service
 Write-Host "Step 3: Starting AI Service (Python)... on Port 8000" -ForegroundColor Yellow
-Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", "cd ai-service; .\venv\Scripts\activate; uvicorn main:app --reload --port 8000"
+Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", "cd ai-service; if (-not (Test-Path 'venv')) { python -m venv venv }; .\venv\Scripts\python -m pip install -r requirements.txt; .\venv\Scripts\python -m uvicorn main:app --reload --port 8000"
 Write-Host "AI Service started in new window." -ForegroundColor Green
 
 # 4. Start Frontend

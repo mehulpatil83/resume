@@ -2,6 +2,10 @@ package handlers
 
 import (
 	"context"
+	"bytes"
+	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 
@@ -89,5 +93,57 @@ func ListResumes(c *gin.Context) {
         return
     }
     
+    
     c.JSON(http.StatusOK, resumes)
+}
+
+func UploadResume(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
+		return
+	}
+
+	f, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open file"})
+		return
+	}
+	defer f.Close()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", file.Filename)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create form file"})
+		return
+	}
+	_, err = io.Copy(part, f)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to copy file content"})
+		return
+	}
+	writer.Close()
+
+	resp, err := http.Post("http://localhost:8000/extract-keywords", writer.FormDataContentType(), body)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to contact AI service: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Read body to see error from AI service if any
+		respBody, _ := io.ReadAll(resp.Body)
+		c.JSON(resp.StatusCode, gin.H{"error": "AI service error", "details": string(respBody)})
+		return
+	}
+
+	var aiResp map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&aiResp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse AI response"})
+		return
+	}
+
+	c.JSON(http.StatusOK, aiResp)
 }

@@ -3,63 +3,71 @@ package db
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/user/resume-generator/backend/ent"
 
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var Client *ent.Client
 
 func Connect() error {
-	// dsn variable removed as we use psqlInfo below
-
 	var err error
+	var driverName, dataSourceName, migrationDSN string
 
-	// psqlInfo constructed below for lib/pq
-
-	// Standard format for lib/pq: "host=localhost port=5432 user=postgres password=password dbname=resume_db sslmode=disable"
-	// Re-doing the string construction properly for lib/pq
-
-	var psqlInfo, migrationDSN string
-	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
-		psqlInfo = dbURL
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL != "" {
+		// Use provided URL directly
+		driverName = "postgres" // Assuming postgres for now if URL provided, or parse scheme
+		dataSourceName = dbURL
 		migrationDSN = dbURL
 	} else {
-		sslMode := getEnv("DB_SSLMODE", "disable")
+		// Check for specific Postgres env vars to indicate preference
+		if os.Getenv("DB_USER") != "" {
+			sslMode := getEnv("DB_SSLMODE", "disable")
+			dataSourceName = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+				getEnv("DB_HOST", "localhost"),
+				getEnv("DB_PORT", "5432"),
+				getEnv("DB_USER", "postgres"),
+				getEnv("DB_PASSWORD", "password"),
+				getEnv("DB_NAME", "resume_db"),
+				sslMode)
 
-		psqlInfo = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-			getEnv("DB_HOST", "localhost"),
-			getEnv("DB_PORT", "5432"),
-			getEnv("DB_USER", "postgres"),
-			getEnv("DB_PASSWORD", "password"),
-			getEnv("DB_NAME", "resume_db"),
-			sslMode)
-
-		// URL format for golang-migrate
-		migrationDSN = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
-			getEnv("DB_USER", "postgres"),
-			getEnv("DB_PASSWORD", "password"),
-			getEnv("DB_HOST", "localhost"),
-			getEnv("DB_PORT", "5432"),
-			getEnv("DB_NAME", "resume_db"),
-			sslMode)
+			migrationDSN = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+				getEnv("DB_USER", "postgres"),
+				getEnv("DB_PASSWORD", "password"),
+				getEnv("DB_HOST", "localhost"),
+				getEnv("DB_PORT", "5432"),
+				getEnv("DB_NAME", "resume_db"),
+				sslMode)
+			driverName = "postgres"
+		} else {
+			// Default to SQLite
+			driverName = "sqlite3"
+			dataSourceName = "file:resume.db?cache=shared&_fk=1"
+			migrationDSN = "sqlite3://resume.db"
+			log.Println("Using SQLite database: resume.db")
+		}
 	}
 
-	// Run Golang-Migrate
+	// Try running migrations if available
 	if err := RunMigrations(migrationDSN); err != nil {
-		return fmt.Errorf("failed creating schema resources via migrate: %v", err)
+		log.Printf("Migration warning (can be ignored for new SQLite db): %v", err)
 	}
 
-	Client, err = ent.Open("postgres", psqlInfo)
+	Client, err = ent.Open(driverName, dataSourceName)
 	if err != nil {
-		return fmt.Errorf("failed opening connection to postgres: %v", err)
+		return fmt.Errorf("failed opening connection to %s: %v", driverName, err)
 	}
 
-	// Ent Auto-Migration (Hybrid mode: ensures DB is synced if migration file is missing)
-	// In production, you might want to disable this and rely solely on RunMigrations.
-	if getEnv("SKIP_AUTOMIGRATE", "false") != "true" {
+	// Always run Auto-Migrate for SQLite to ensure tables exist
+	if driverName == "sqlite3" || getEnv("SKIP_AUTOMIGRATE", "false") != "true" {
 		if err := Client.Schema.Create(context.Background()); err != nil {
 			return fmt.Errorf("failed creating schema resources: %v", err)
 		}
