@@ -6,3 +6,6 @@ pydantic
 openai
 pypdf
 requests
+python-multipart
+pdfplumber
+litellm

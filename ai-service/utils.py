@@ -1,15 +1,17 @@
 import io
 import json
 import requests
-from pypdf import PdfReader
+import pdfplumber
 from typing import List
 
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     try:
-        reader = PdfReader(io.BytesIO(pdf_bytes))
         text = ""
-        for page in reader.pages:
-            text += page.extract_text() or ""
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            for page in pdf.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted + "\n"
         return text
     except Exception as e:
         print(f"Error extracting text from PDF: {e}")
@@ -21,7 +23,9 @@ def extract_keywords_with_qwen(text: str) -> List[str]:
     
     prompt = f"""
     Analyze the following resume text and extract the top 15 technical skills, tools, and keywords relevant to the candidate's profile.
-    Return STRICTLY a JSON list of strings (e.g., ["Python", "React", "Project Management"]). 
+    CRITICAL: You must ONLY extract skills and keywords that are EXPLICITLY mentioned in the text below. 
+    DO NOT hallucinate, guess, or infer any skills that are not literally written in the document. No bluffing.
+    Return STRICTLY a JSON list of strings (e.g., ["Python", "React"]). 
     Do not include any explanation or markdown formatting.
 
     Resume Text:
@@ -61,6 +65,66 @@ def extract_keywords_with_qwen(text: str) -> List[str]:
         
     except Exception as e:
         print(f"Error calling LLM: {e}")
-        print("Falling back to MOCK KEYWORDS mode since Ollama appears to be offline or failing.")
-        # Fallback to mock data so the app flow isn't broken for the user
-        return ["Communication", "Leadership", "Python (Mock)", "Project Management", "Strategic Planning", "Data Analysis"]
+        print("Falling back to exact text-matching mode since Ollama appears to be offline.")
+        
+        # Fallback to exact text matching so we don't bluff
+        common_skills = [
+            "Python", "Java", "JavaScript", "TypeScript", "C++", "C#", "Ruby", "PHP", "Go", "Rust", "Swift", "Kotlin", 
+            "HTML", "CSS", "React", "Angular", "Vue", "Node.js", "Express", "Django", "Flask", "Spring", ".NET", 
+            "SQL", "MySQL", "PostgreSQL", "MongoDB", "Redis", "Elasticsearch", "AWS", "Azure", "GCP", "Docker", 
+            "Kubernetes", "Git", "CI/CD", "Linux", "Unix", "Agile", "Scrum", "Project Management", "Leadership", 
+            "Communication", "Data Analysis", "Machine Learning", "Data Science", "AI", "DevOps", "Frontend", 
+            "Backend", "Full Stack", "Microservices", "REST", "GraphQL", "Jenkins", "Terraform", "Ansible",
+            "Excel", "Sales", "Marketing", "Customer Service", "Accounting", "Problem Solving"
+        ]
+        
+        text_lower = text.lower()
+        found = []
+        for skill in common_skills:
+            if skill.lower() in text_lower:
+                found.append(skill)
+        
+        return found[:15]
+
+def extract_structured_data(text: str) -> dict:
+    """
+    Uses the LLM to extract Name, Summary, and Experience from the resume text.
+    """
+    prompt = f"""
+    Analyze the following resume text and extract:
+    1. Full Name
+    2. Professional Summary
+    3. Core Skills (list)
+    4. Work Experience (keep formatting)
+    
+    Return STRICTLY a JSON object with keys: "full_name", "summary", "skills", "experience".
+    No other text.
+    
+    Resume Text:
+    {text[:8000]}
+    """
+    
+    try:
+        model_name = "qwen2.5-coder:1.5b" 
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": model_name, 
+                "prompt": prompt,
+                "stream": False,
+                "format": "json"
+            },
+            timeout=10 # Fast fail for startup/empty env
+        )
+        response.raise_for_status()
+        result_json = response.json()
+        return json.loads(result_json.get("response", "{}"))
+    except Exception as e:
+        print(f"Structured extraction LLM call failed: {e}")
+        # Basic heuristic fallback
+        return {
+            "full_name": "Extracted Lead",
+            "summary": text[:200] + "..." if len(text) > 200 else text,
+            "skills": [],
+            "experience": text
+        }

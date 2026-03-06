@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -73,28 +73,27 @@ func GetResume(c *gin.Context) {
 }
 
 func ListResumes(c *gin.Context) {
-    // Ideally filter by UserID from query param or Auth token
-    // For now, listing all for simplicity or based on a query param
-    
-    userIDStr := c.Query("user_id")
-    if userIDStr == "" {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "user_id query parameter required"})
-        return
-    }
-    userID, _ := strconv.Atoi(userIDStr)
+	// Ideally filter by UserID from query param or Auth token
+	// For now, listing all for simplicity or based on a query param
 
-    resumes, err := db.Client.Resume.
-        Query().
-        Where(resume.HasUserWith(user.IDEQ(userID))).
-        All(context.Background())
-        
-    if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
-        return
-    }
-    
-    
-    c.JSON(http.StatusOK, resumes)
+	userIDStr := c.Query("user_id")
+	if userIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id query parameter required"})
+		return
+	}
+	userID, _ := strconv.Atoi(userIDStr)
+
+	resumes, err := db.Client.Resume.
+		Query().
+		Where(resume.HasUserWith(user.IDEQ(userID))).
+		All(context.Background())
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, resumes)
 }
 
 func UploadResume(c *gin.Context) {
@@ -125,7 +124,7 @@ func UploadResume(c *gin.Context) {
 	}
 	writer.Close()
 
-	resp, err := http.Post("http://localhost:8000/extract-keywords", writer.FormDataContentType(), body)
+	resp, err := http.Post("http://127.0.0.1:8000/extract-keywords", writer.FormDataContentType(), body)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to contact AI service: " + err.Error()})
 		return
